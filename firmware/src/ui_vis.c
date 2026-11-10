@@ -206,6 +206,135 @@ static void vis_bands(int16_t *out)
     }
 }
 
+/* ---- (purple scope) the OSCILLOSCOPE's colour: KNOB 1 on OSCILLOSCOPE steps through them ----
+ * 0 FREQUENCY (the default): the colour follows where the sound's energy sits in the spectrum. The 32 bands of
+ *   vis_fft / vis_bands (40 Hz .. 10 kHz) are weighted around the loudest band (bands within 12 dB of it count,
+ *   the louder the more), their centre is eased, and it picks a colour on a low-to-high ramp:
+ *   ~40 Hz red, ~250 Hz magenta, ~560 Hz purple, ~1 kHz blue, ~3 kHz cyan, ~9 kHz near white.
+ *   A kick or a low bass note: red / magenta; a lead in the middle: purple; hats and bright noise: cyan.
+ *   Quiet: the trace fades to a dim purple.
+ * 1 BANDS: bass (~40..260 Hz) red, mids (~260 Hz..2.1 kHz) green, treble (~2.1..10 kHz) blue, mixed.
+ * 2 THEME (track 1's colour), 3..8 fixed colours.
+ * Not kept in the settings (the settings words have no free bits): every power-on starts at FREQUENCY.
+ * It only reads the FFT the SPECTRUM style already runs, in the main loop: no cost to the audio. */
+#define SCOPE_NCOL 9u
+enum { SC_FREQ, SC_BANDS, SC_THEME };
+static const char *const SCOPE_COL_NAME[SCOPE_NCOL] = {"COLOUR: FREQUENCY", "COLOUR: BANDS", "COLOUR: THEME",
+    "COLOUR: PURPLE", "COLOUR: MAGENTA", "COLOUR: VIOLET", "COLOUR: CYAN", "COLOUR: GREEN", "COLOUR: WHITE"};
+static uint8_t scope_col;                           /* SC_FREQ at power-on */
+static int32_t scope_e[3];                          /* BANDS: bass, mids, treble, 0..1000 x 16 (eased) */
+static int32_t scope_pos = 12 * 16, scope_amt;      /* FREQUENCY: the centre band x 16 (eased), presence 0..256 */
+#define SCOPE_QUIET RGB(70, 30, 110)
+/* FREQUENCY: the ramp, band position (x16) -> colour */
+static const uint8_t SCOPE_STOP_POS[6] = {0, 5, 12, 19, 25, 31};
+static const uint8_t SCOPE_STOP_RGB[6][3] = {{255, 40, 40}, {255, 40, 210}, {170, 60, 255}, {70, 90, 255},
+                                            {0, 220, 255}, {220, 255, 255}};
+static uint16_t scope_ramp(int32_t p16)
+{
+    int32_t s = 0, k, a, b, c[3];
+    p16 = clamp(p16, 0, 31 * 16);
+    while (s < 4 && p16 > SCOPE_STOP_POS[s + 1] * 16)
+        s++;
+    a = SCOPE_STOP_POS[s] * 16;
+    b = SCOPE_STOP_POS[s + 1] * 16;
+    for (k = 0; k < 3; k++)
+        c[k] = SCOPE_STOP_RGB[s][k] + (SCOPE_STOP_RGB[s + 1][k] - SCOPE_STOP_RGB[s][k]) * (p16 - a) / (b - a);
+    return RGB(c[0], c[1], c[2]);
+}
+static uint16_t scope_freq_colour(void)
+{
+    return mix565(SCOPE_QUIET, scope_ramp(scope_pos), scope_amt);
+}
+/* FREQUENCY, from this frame's bands: the centre around the loudest band (x16) and the loudest level; -1: quiet */
+static int32_t scope_centre(const int16_t *b, int32_t *loud)
+{
+    int32_t k, m = 0, fl, sw = 0, sp = 0;
+    for (k = 0; k < 32; k++)
+        if (b[k] > m) m = b[k];
+    *loud = m;
+    if (m < 100)
+        return -1;
+    fl = m - 200;                                   /* 12 dB under the loudest */
+    for (k = 0; k < 32; k++)
+        if (b[k] > fl) {
+            int32_t w = (b[k] - fl) * (b[k] - fl) / 64;   /* (<= 625) */
+            sw += w;
+            sp += w * k * 16;
+        }
+    return sw ? sp / sw : -1;
+}
+static uint16_t scope_mix(void)
+{
+    int32_t k, m = 0, mn = 0x7fffffff, lo, den, c[3];
+    for (k = 0; k < 3; k++) {
+        if (scope_e[k] > m) m = scope_e[k];
+        if (scope_e[k] < mn) mn = scope_e[k];
+    }
+    if (m < 40 * 16)                                /* (near silence: a dim purple) */
+        return SCOPE_QUIET;
+    /* (the band levels are in dB, so the three sit close: stretched from a little under the weakest to the
+     * strongest, then squared, so the part that leads shows; all three alike: a pale lavender) */
+    lo = mn - (m - mn) / 4;
+    den = m - lo;
+    if (den < 16 * 16)
+        return RGB(220, 200, 255);
+    for (k = 0; k < 3; k++) {
+        int32_t r = (scope_e[k] - lo) * 255 / den;
+        c[k] = r * r / 255;
+    }
+    return RGB(c[0], c[1], c[2]);
+}
+static uint16_t scope_colour(void)
+{
+    switch (scope_col) {
+    case SC_FREQ: return scope_freq_colour();
+    case SC_BANDS: return scope_mix();
+    case 3: return RGB(160, 70, 255);
+    case 4: return RGB(240, 60, 220);
+    case 5: return RGB(110, 90, 255);
+    case 6: return RGB(0, 230, 255);
+    case 7: return RGB(60, 255, 90);
+    case 8: return RGB(255, 255, 255);
+    default: return TE_COL[0];
+    }
+}
+/* the glow beside the trace: the colour at half brightness (RGB565) */
+static uint16_t scope_dim(void)
+{
+    return scope_col != SC_THEME ? (uint16_t)((scope_colour() >> 1) & 0x7BEFu) : TE_DIM[0];
+}
+/* FREQUENCY / BANDS: this frame's spectrum, eased into the colour */
+static void scope_sound(void)
+{
+    static const uint8_t LO[3] = {0, 5, 23}, HI[3] = {5, 23, 32};
+    int16_t b[32];
+    int32_t k, i;
+    vis_fft();
+    vis_bands(b);
+    if (scope_col == SC_FREQ) {
+        int32_t loud, c = scope_centre(b, &loud), t;
+        if (c >= 0)                                 /* the centre glides (a third of the way a frame) */
+            scope_pos += (c - scope_pos) / 3;
+        t = clamp((loud - 100) * 256 / 250, 0, 256);   /* presence: quick up, slow down */
+        scope_amt += (t - scope_amt) / (t > scope_amt ? 2 : 6);
+        return;
+    }
+    for (k = 0; k < 3; k++) {
+        int32_t sum = 0, t;
+        for (i = LO[k]; i < HI[k]; i++)
+            sum += b[i];
+        t = sum * 16 / (HI[k] - LO[k]);
+        scope_e[k] += (t - scope_e[k]) / (t > scope_e[k] ? 2 : 8);
+    }
+}
+/* KNOB 1 on OSCILLOSCOPE: the next / previous colour (round), its name a second */
+static void scope_col_turn(int32_t s)
+{
+    scope_col = (uint8_t)((scope_col + (s > 0 ? 1u : SCOPE_NCOL - 1u)) % SCOPE_NCOL);
+    ui_message(SCOPE_COL_NAME[scope_col]);
+    ui.force = 1;
+}
+
 static void vis_update(void)
 {
     uint32_t i, w, hit, now = fm1_ms;
@@ -269,6 +398,10 @@ static void vis_update(void)
         vs.scale += (target - vs.scale) / 5;
     }
     switch (vis_style) {
+    case 0:
+        if (scope_col == SC_FREQ || scope_col == SC_BANDS)
+            scope_sound();
+        break;
     case 1: case 2: {
         int16_t b[32];
         vis_fft();
@@ -342,6 +475,7 @@ static void vis_scope(void)
 {
     uint32_t i0 = 0, i;
     int32_t py = 0;
+    uint16_t col = scope_colour(), dim = scope_dim();
     for (i = 1; i + 240u < VIS_FFT; i++)            /* a rising zero crossing: the wave stands still */
         if (vis_l[i - 1u] < 0 && vis_l[i] >= 0) {
             i0 = i;
@@ -354,9 +488,9 @@ static void vis_scope(void)
         int32_t y = 120 - vis_l[i0 + i] * 100 / (vs.scale ? vs.scale : 1);
         y = clamp(y, 2, 237);
         if (i) {
-            cv_line((int32_t)i - 1, py - 1, (int32_t)i, y - 1, TE_DIM[0]);
-            cv_line((int32_t)i - 1, py + 2, (int32_t)i, y + 2, TE_DIM[0]);
-            vis_thick((int32_t)i - 1, py, (int32_t)i, y, TE_COL[0]);
+            cv_line((int32_t)i - 1, py - 1, (int32_t)i, y - 1, dim);
+            cv_line((int32_t)i - 1, py + 2, (int32_t)i, y + 2, dim);
+            vis_thick((int32_t)i - 1, py, (int32_t)i, y, col);
         }
         py = y;
     }

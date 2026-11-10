@@ -174,6 +174,19 @@ int main(int argc, char **argv)
     for (i = 0; i < NPART; i++) { set_engine_of(&trk[i], TRK_DEF[i][0]); apply_preset_to(&trk[i], TRK_DEF[i][1]); trk[i].engine = trk[i].eng_req; }
     TDRUM->p[P_E0] = DRUM_DEFAULT_KIT;
     sloop_splash(); ppm("page-splash");
+    {   /* (Bump It) the boot screen: BUMP IT in the purple tracks' colours, a purple bar, nothing in SLOOP's colours */
+        uint32_t x, np = 0, nold = 0, q;
+        for (x = 0; x < 240u * 240u; x++) {
+            uint16_t c = swap16(screen[x]);
+            for (q = 0; q < 4u; q++) {
+                np += c == TE_COL_PUR[q];
+                nold += c == TE_COL_DEF[q];
+            }
+        }
+        printf("   boot screen: %u px in the purple title colours, %u in SLOOP's track colours\n", np, nold);
+        check(np > 3000u && nold == 0u && swap16(screen[173u * 240u + 120u]) == TE_COL_PUR[0],
+              "Bump It boot screen: BUMP IT drawn large in purple, a purple bar under it");
+    }
     ui.menu = 2; ui.force = 1; frame(); ppm("page-about"); ui.menu = 0;
     go_home(); ui.force = 1; frame(); ppm("page-tracks");
     open_family(FAM_ENV); ui.force = 1; ui.hot_col = 1; ui.hot_t = 30; frame(); ppm("page-env");
@@ -858,13 +871,13 @@ int main(int argc, char **argv)
             check(ok, "theme (2.7): checked (CRC, the strongest step and the accent standing out from the background, a "
                       "printable name); a first-beta THM1 taken with an accent");
             ui.menu = 1; ui.menu_sel = MI_COLOR; ui.force = 1; frame();
-            settings.palette = 4; theme_on = 0; palette_set(4);
-            encs[panel.enc[EN_K1]] = 1; frame();      /* no theme: MONO -> GREEN, as ever */
+            settings.palette = PAL_PURPLE; theme_on = 0; palette_set(PAL_PURPLE);
+            encs[panel.enc[EN_K1]] = 1; frame();      /* no theme: PURPLE (custom, the last built-in) -> GREEN */
             ok = settings.palette == 0u && !theme_on;
-            settings.palette = 4; palette_set(4);
+            settings.palette = PAL_PURPLE; palette_set(PAL_PURPLE);
             theme = th; theme_valid = 1;
-            encs[panel.enc[EN_K1]] = 1; frame();      /* MONO -> SUNSET */
-            ok &= theme_on && settings.palette == 4u && pal[0] == th.c[0] && pal[4] == th.c[4] && C_BLACK == th.bg &&
+            encs[panel.enc[EN_K1]] = 1; frame();      /* PURPLE -> SUNSET */
+            ok &= theme_on && settings.palette == PAL_PURPLE && pal[0] == th.c[0] && pal[4] == th.c[4] && C_BLACK == th.bg &&
                   TE_COL[0] == th.trk[0] && TE_COL[3] == th.trk[3] && TE_MID[1] == rgb565_scale(th.trk[1], 2, 3) &&
                   (lights_word() >> 30 & 1u) && !strcmp(mi_value(MI_COLOR, &(uint16_t){0}), "SUNSET") && C_WHITE == th.hi;
             ui.force = 1; frame(); ppm("menu-theme");
@@ -1469,6 +1482,85 @@ int main(int argc, char **argv)
             ppm(nm);
             snprintf(nm, sizeof nm, "visualiser %2u %-12s draws (%u px lit)", st + 1u, VIS_NAME[st], lit);
             check(lit > (st == 3u ? 400u : 1500u) && vis_style == st, nm);   /* (Lissajous: points) */
+            if (st == 0u) {                         /* (purple scope) the OSCILLOSCOPE's colour */
+                uint32_t q, okc = 1;
+                uint16_t want = scope_colour();
+                check(scope_col == SC_FREQ, "purple scope: the OSCILLOSCOPE starts in FREQUENCY colour");
+                for (lit = 0, x = 0; x < 240u * 240u; x++)
+                    lit += swap16(screen[x]) == want;
+                printf("   FREQUENCY on the groove: centre %d/16 (band %d), presence %d/256, rgb565 %04X, %u px\n",
+                       scope_pos, scope_pos / 16, scope_amt, want, lit);
+                check(scope_amt > 128 && lit > 300u, "purple scope: FREQUENCY on a playing groove: the trace drawn in its colour");
+                {   /* real tones through the same FFT and bands: the centre climbs with the frequency */
+                    static const int32_t HZ[7] = {80, 250, 560, 1000, 2000, 4000, 8000};
+                    int16_t bb[32];
+                    int32_t cen[7], loud, mono = 1, f, n;
+                    uint16_t cc[7];
+                    int16_t save[VIS_FFT];
+                    memcpy(save, vis_l, sizeof save);
+                    for (f = 0; f < 7; f++) {
+                        for (n = 0; n < (int32_t)VIS_FFT; n++)
+                            vis_l[n] = (int16_t)(12000.0 * sin(2.0 * 3.14159265358979 * HZ[f] * n / 22050.0));
+                        vis_fft();
+                        vis_bands(bb);
+                        cen[f] = scope_centre(bb, &loud);
+                        cc[f] = scope_ramp(cen[f]);
+                        printf("   FREQUENCY: %5d Hz sine -> centre band %2d.%02d, rgb565 %04X (r %2u g %2u b %2u)\n", HZ[f],
+                               cen[f] / 16, cen[f] % 16 * 100 / 16, cc[f], cc[f] >> 11, (cc[f] >> 5) & 63u, cc[f] & 31u);
+                        if (f && cen[f] <= cen[f - 1]) mono = 0;
+                    }
+                    check(mono, "purple scope: FREQUENCY: higher tones sit higher (80 Hz .. 8 kHz, a sine each)");
+                    check((cc[0] >> 11) > 28u && (cc[0] & 31u) < 10u, "purple scope: FREQUENCY: 80 Hz is red");
+                    check((cc[2] >> 11) > 16u && (cc[2] & 31u) > 26u && ((cc[2] >> 5) & 63u) < 24u,
+                          "purple scope: FREQUENCY: 560 Hz is purple");
+                    check((cc[6] & 31u) > 28u && ((cc[6] >> 5) & 63u) > 50u, "purple scope: FREQUENCY: 8 kHz is cyan / pale");
+                    for (n = 0; n < (int32_t)VIS_FFT; n++)
+                        vis_l[n] = 0;
+                    vis_fft();
+                    vis_bands(bb);
+                    check(scope_centre(bb, &loud) < 0, "purple scope: FREQUENCY: silence holds the colour (no centre)");
+                    {
+                        int32_t a0 = scope_amt;
+                        uint16_t qc;
+                        scope_amt = 0; qc = scope_freq_colour(); scope_amt = a0;
+                        check(qc == SCOPE_QUIET, "purple scope: FREQUENCY: quiet is a dim purple");
+                    }
+                    memcpy(vis_l, save, sizeof save);
+                }
+                ppm("vis-01-FREQUENCY");
+                for (q = 1; q < SCOPE_NCOL; q++) {
+                    encs[panel.enc[EN_K1]] = 1; frames(40);
+                    ui.force = 1; frames(2);
+                    want = scope_colour();
+                    for (lit = 0, x = 0; x < 240u * 240u; x++)
+                        lit += swap16(screen[x]) == want;
+                    snprintf(nm, sizeof nm, "vis-01-%s", SCOPE_COL_NAME[q] + 8);
+                    ppm(nm);
+                    printf("   scope %-18s rgb565 %04X, %u px\n", SCOPE_COL_NAME[q], want, lit);
+                    okc &= scope_col == q && lit > 300u;
+                }
+                check(okc, "purple scope: KNOB 1 steps the scope's colour (BANDS .. WHITE), drawn in it");
+                printf("   BANDS: bass %d mids %d treble %d (x16)\n", scope_e[0], scope_e[1], scope_e[2]);
+                check(scope_e[0] > 0 && scope_e[1] > 0 && scope_e[2] > 0, "purple scope: BANDS follows bass, mids and treble");
+                {   /* BANDS: the part that leads shows (r, g, b of RGB565) */
+                    int32_t sv[3] = {scope_e[0], scope_e[1], scope_e[2]};
+                    uint16_t kick, hats, acid;
+                    scope_e[0] = 9000; scope_e[1] = 5000; scope_e[2] = 4000; kick = scope_mix();
+                    scope_e[0] = 4000; scope_e[1] = 5000; scope_e[2] = 9000; hats = scope_mix();
+                    scope_e[0] = 9000; scope_e[1] = 5000; scope_e[2] = 8800; acid = scope_mix();
+                    check((kick >> 11) > 28u && ((kick >> 5) & 63u) < 12u && (kick & 31u) < 4u &&
+                          (hats & 31u) > 28u && (hats >> 11) < 4u &&
+                          (acid >> 11) > 28u && (acid & 31u) > 24u && ((acid >> 5) & 63u) < 8u,
+                          "purple scope: BANDS colours: bass red, treble blue, bass + treble magenta");
+                    scope_e[0] = sv[0]; scope_e[1] = sv[1]; scope_e[2] = sv[2];
+                }
+                encs[panel.enc[EN_K1]] = 1; frames(40);
+                check(scope_col == SC_FREQ, "purple scope: KNOB 1 goes round to FREQUENCY");
+                encs[panel.enc[EN_K1]] = -1; frames(40);
+                check(scope_col == SCOPE_NCOL - 1u, "purple scope: KNOB 1 left from FREQUENCY: WHITE");
+                encs[panel.enc[EN_K1]] = 1; frames(40);
+                ui.force = 1; frames(2);
+            }
             encs[panel.enc[EN_SELECT]] = 1; frame();
         }
         {   /* MASTER at 0: silence out, the picture as if MASTER were all the way up */
@@ -2122,6 +2214,19 @@ int main(int argc, char **argv)
         }
         fm1_in.buttons = 0; fm1_in.notes = 0; frames(4);
         #undef R
+    }
+    {   /* (Bump It) a few pages in the PURPLE palette (a fresh FM-1's default here), for the screenshots */
+        uint32_t x, np;
+        ly_lock = 0; theme_on = 0; settings.palette = PAL_PURPLE; palette_set(PAL_PURPLE);
+        ui.menu = 0; go_home(); ui.force = 1; frames(2); ppm("purple-tracks");
+        for (np = 0, x = 0; x < 240u * 240u; x++)
+            for (uint32_t q = 0; q < 4u; q++)
+                np += swap16(screen[x]) == TE_COL_PUR[q];
+        check(np > 500u, "Bump It: PURPLE palette: the tracks page drawn in purples");
+        open_family(FAM_EDIT); ui.force = 1; frames(2); ppm("purple-edit");
+        go_home(); ui.menu = 1; ui.menu_sel = 0; ui.force = 1; frames(2); ppm("purple-menu");
+        check(!strcmp(mi_value(MI_COLOR, &(uint16_t){0}), "PURPLE"), "Bump It: MENU > SCREEN > COLOR shows PURPLE");
+        ui.menu = 0; ui.force = 1; frames(2);
     }
     printf("ui: %s\n", fails ? "FAILED" : "pages, layers (punch, steps, erase, roll, key, mix), layer lock, song layer, REC hold, drums, REC, 20000-frame fuzz PASS");
     return fails;
