@@ -188,6 +188,18 @@ int main(int argc, char **argv)
               "Bump It boot screen: BUMP IT drawn large in purple, a purple bar under it");
     }
     ui.menu = 2; ui.force = 1; frame(); ppm("page-about"); ui.menu = 0;
+    {   /* (Bump It 1.1) the version, one string for the boot screen and ABOUT; ABOUT draws it top right in pale purple */
+        uint32_t x, y, nv = 0, nleft = 0;
+        for (y = 0; y < 240u; y++)
+            for (x = 0; x < 240u; x++)
+                if (swap16(screen[y * 240u + x]) == BUMPIT_VERSION_COL) {
+                    nv++;
+                    nleft += x < 120u || y > 80u;
+                }
+        printf("   ABOUT: %u px of the Bump It version colour (%u outside the top right)\n", nv, nleft);
+        check(!strcmp(BUMPIT_VERSION, "BUMP IT 1.1"), "Bump It 1.1: the version string reads BUMP IT 1.1");
+        check(nv > 100u && nleft == 0u, "Bump It 1.1: ABOUT shows the Bump It version at the top right, in its pale purple");
+    }
     go_home(); ui.force = 1; frame(); ppm("page-tracks");
     open_family(FAM_ENV); ui.force = 1; ui.hot_col = 1; ui.hot_t = 30; frame(); ppm("page-env");
     open_family(FAM_ARP); ui.force = 1; frame(); ppm("page-arp");

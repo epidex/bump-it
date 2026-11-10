@@ -6,6 +6,7 @@
  * its row), PRESETS moves the cursor; OCT+ steps the cursor's setting round or opens it (CALIBRATION, ABOUT),
  * OCT- closes (from ABOUT: back to the section). */
 /* ------------------------------------------------------------ menu --- */
+#include "bumpit_version.h"   /* (Bump It 1.1) ABOUT shows Bump It's version beside SLOOP's */
 /* (2.7: USB SERIAL only in a build with the serial console, FELUCCA_CDC=1: the FM-1's build has none) */
 enum { MI_COLOR, MI_ZOOM, MI_ACCEL, MI_LIGHTS, MI_KEYS, MI_NOTES, MI_LOWCUT, MI_USB,
 #if FELUCCA_CDC
@@ -137,6 +138,7 @@ UI_SMALL static void draw_menu(void)
             cv_text(4, 4, &FONT_L, "SLOOP", C_WHITE);
             cv_rect(96, 10, 8, 4, TE_COL[0]), cv_rect(96, 16, 12, 4, TE_COL[1]);   /* the sail */
             cv_rect(96, 22, 16, 4, TE_COL[2]), cv_rect(96, 28, 20, 4, TE_COL[3]);
+            cv_text(236 - text_w(&FONT_S, BUMPIT_VERSION), 12, &FONT_S, BUMPIT_VERSION, BUMPIT_VERSION_COL);   /* (Bump It 1.1) */
             cv_text(4, 36, &FONT_S, "BASED ON FELUCCA", C_AMB);
             cv_text(4, 54, &FONT_S, FELUCCA_VERSION, C_HI);
             cv_text(236 - text_w(&FONT_S, __DATE__), 54, &FONT_S, __DATE__, C_GRAY);   /* build date */

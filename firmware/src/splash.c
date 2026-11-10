@@ -3,9 +3,7 @@
 #ifndef UI_SMALL                 /* (2.7) compiled for size: not the audio path (gfx.c UI_SMALL); the host tests: nothing */
 #define UI_SMALL
 #endif
-#ifndef BUMPIT_VERSION
-#define BUMPIT_VERSION "BUMP IT 1.0"   /* (Bump It) this side project's own version; FELUCCA_VERSION stays SLOOP's */
-#endif
+#include "bumpit_version.h"   /* (Bump It) BUMPIT_VERSION, shared with ABOUT */
 /* (Bump It) the boot screen, as Beat It draws its own: "BUMP IT" in large purple letters on black (FONT_L drawn small,
  * then three times as big, in place, the letters in the purple tracks' colours), a purple bar, the version and where
  * it comes from. No logo image: SLOOP's sail logo (sloop_logo.h) is no longer drawn at boot. */
@@ -38,7 +36,7 @@ UI_SMALL static void sloop_splash(void)
     bumpit_title_draw(64);
     lcd_fill(40, 172, 160, 3, TE_COL_PUR[0]);           /* a purple bar under the title */
     cv_begin(240, 36, C_BLACK);
-    cv_text(120 - text_w(&FONT_S, BUMPIT_VERSION) / 2, 0, &FONT_S, BUMPIT_VERSION, RGB(196, 160, 255));
+    cv_text(120 - text_w(&FONT_S, BUMPIT_VERSION) / 2, 0, &FONT_S, BUMPIT_VERSION, BUMPIT_VERSION_COL);
     cv_text(120 - text_w(&FONT_S, "based on SLOOP and felucca") / 2, 18, &FONT_S, "based on SLOOP and felucca", RGB(110, 90, 140));
     cv_blit(0, 196);
 }
