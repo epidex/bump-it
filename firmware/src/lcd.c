@@ -10,6 +10,8 @@
 #define LCD_BAUD 4u                /* lsb/(BAUD+1): 4 = 12 MHz */
 #endif
 
+#include "bright.h"         /* (Bump It 1.1) SETTINGS > SCREEN > BRIGHTNESS: lcd_fill / lcd_blit scale the pixels */
+
 static uint8_t lcd_small[64];
 static uint8_t lcd_busy;           /* a lcd_data DMA may still run; CS is low */
 
@@ -67,9 +69,12 @@ static uint16_t lcd_fillbuf[240];
 
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
-    uint32_t i, n, k, sw = (uint16_t)((c >> 8) | (c << 8));
+    uint32_t i, n, k, sw;
     if (!w || !h || x >= 240u || y >= 240u)
         return;
+    if (lcd_bright_step)                    /* (Bump It 1.1) BRIGHTNESS below 100%: the colour, once */
+        c = lcd_dim565(c);
+    sw = (uint16_t)((c >> 8) | (c << 8));
     if (x + w > 240u)
         w = 240u - x;
     if (y + h > 240u)
@@ -86,11 +91,42 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
     }
 }
 
+/* (Bump It 1.1) BRIGHTNESS below 100%: the pixels (byte-swapped, as sent) are scaled into two strips of 240 in
+ * turn, each sent while the next is made. A strip is written only after the transfer that last read it has ended:
+ * lcd_data waits for the one before it (lcd_sync), and the first strip after lcd_window (which waits too). */
+#define LCD_DIM_N 240u
+static uint16_t lcd_dimbuf[2][LCD_DIM_N];
+
+static void lcd_blit_dim(const uint16_t *px, uint32_t n)
+{
+    uint32_t b = 0, k, i;
+    while (n) {
+        uint16_t *d = lcd_dimbuf[b];
+        k = n < LCD_DIM_N ? n : LCD_DIM_N;
+        for (i = 0; i < k; i++) {
+            uint32_t s = px[i];
+            if (s) {                                          /* (black stays black: most of a screen) */
+                s = lcd_dim565((s >> 8) | ((s & 0xFFu) << 8));
+                s = (s >> 8) | ((s & 0xFFu) << 8);
+            }
+            d[i] = (uint16_t)s;
+        }
+        lcd_data(d, k * 2u);
+        px += k;
+        n -= k;
+        b ^= 1u;
+    }
+}
+
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *px)
 {
     if (!w || !h)
         return;
     lcd_window(x, y, x + w - 1u, y + h - 1u);
+    if (lcd_bright_step) {
+        lcd_blit_dim(px, w * h);
+        return;
+    }
     lcd_data(px, w * h * 2u);
 }
 

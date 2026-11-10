@@ -1140,7 +1140,7 @@ int main(int argc, char **argv)
     {   /* the menu in sections (2.4): SELECT the section, KNOB 1..3 its rows, PRESETS the cursor, OCT+ opens */
         uint32_t sec;
         ui.menu = 1; ui.menu_sel = 0; ui.force = 1; frame(); ppm("menu-screen");
-        check(mi_sec(ui.menu_sel) == MS_SCREEN, "menu: opens on SCREEN (COLOR, ZOOM, KNOB ACCEL)");
+        check(mi_sec(ui.menu_sel) == MS_SCREEN, "menu: opens on SCREEN (COLOR, ZOOM, KNOB ACCEL, BRIGHTNESS)");
         encs[panel.enc[EN_K3]] = -1; frame();               /* (2.7) row 3: KNOB ACCEL, left OFF */
         check(ui.menu_sel == MI_ACCEL && knob_accel_off == 1u && (lights_word() >> 27 & 1u),
               "menu SCREEN: KNOB 3 left: KNOB ACCEL OFF, saved with the settings (bit 27)");
@@ -1148,6 +1148,33 @@ int main(int argc, char **argv)
         check(knob_accel_off == 0u && !(lights_word() >> 27 & 1u), "menu SCREEN: KNOB 3 right: KNOB ACCEL ON");
         lights_from_word(0);
         check(knob_accel_off == 0u, "menu SCREEN: a settings word from before 2.7 reads KNOB ACCEL ON");
+        {   /* (Bump It 1.1) SETTINGS > SCREEN > BRIGHTNESS, row 4: 100 70 50 30 15 %, kept in the ZOOM word (bits 8..10) */
+            uint32_t z0 = settings.zoom;
+            ui.menu_sel = 0; ui.force = 1; frame();
+            check(mi_sec(MI_BRIGHT) == MS_SCREEN && mi_row(MI_BRIGHT) == 3u && bright_step() == 0u && lcd_bright_step == 0u,
+                  "menu SCREEN (Bump It 1.1): BRIGHTNESS is row 4 (KNOB 4), 100% by default");
+            encs[panel.enc[EN_K4]] = -1; frame();
+            encs[panel.enc[EN_K4]] = -1; frame();
+            ui.force = 1; frame(); ppm("menu-brightness");
+            check(ui.menu_sel == MI_BRIGHT && bright_step() == 2u && lcd_bright_step == 2u &&
+                  (settings.zoom & BRIGHT_MASK) == (2u << BRIGHT_SHIFT) && zoom_on() == (z0 & 1u),
+                  "menu SCREEN: KNOB 4 left twice: 50%, the screen at once, ZOOM untouched");
+            { int k; for (k = 0; k < 4; k++) { encs[panel.enc[EN_K4]] = -1; frame(); } }   /* a detent a frame */
+            check(bright_step() == BRIGHT_N - 1u, "menu SCREEN: BRIGHTNESS stops at 15%");
+            mi_set(MI_BRIGHT, 0);
+            check(bright_step() == 0u && lcd_bright_step == 0u, "menu SCREEN: OCT+ steps it round, 15% to 100%");
+            settings.zoom = 3u << BRIGHT_SHIFT;
+            mi_set(MI_ZOOM, 0);
+            check(zoom_on() && bright_step() == 3u, "menu SCREEN: ZOOM toggles its own bit, BRIGHTNESS stays");
+            mi_set(MI_ZOOM, -1);
+            check(!zoom_on() && bright_step() == 3u, "menu SCREEN: ZOOM OFF, BRIGHTNESS still 30%");
+            settings.magic = SETTINGS_MAGIC;
+            settings.zoom = 0x7701u;                        /* a word no Bump It wrote */
+            settings_init();
+            check(settings.zoom == ZOOM_BIT && lcd_bright_step == 0u, "settings: an unknown ZOOM word: ZOOM ON, 100%");
+            settings.zoom = z0; bright_apply();
+            ui.menu_sel = 0; ui.force = 1; frame();
+        }
         {   /* (2.7.1) the SEQ section: STEP ADVANCE (ON), DRUM PREVIEW (OFF); between AUDIO and SYSTEM */
             uint32_t m0 = ui.menu_sel;
             check(!drum_preview && !step_adv_off && mi_sec(MI_ADV) == MS_SEQ && mi_sec(MI_DPREV) == MS_SEQ &&

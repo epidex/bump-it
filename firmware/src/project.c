@@ -1050,7 +1050,7 @@ UI_SMALL static uint32_t settings_restore(const void *raw, uint32_t n)
         return 2;
     memset(&p, 0, sizeof p);
     memcpy(&p, raw, n);
-    if (p.magic != PERSIST_MAGIC || p.palette >= NPALETTES || p.lowcut > 1u || p.zoom > 1u || !panel_valid(&p.panel))
+    if (p.magic != PERSIST_MAGIC || p.palette >= NPALETTES || p.lowcut > 1u || !ZOOM_WORD_OK(p.zoom) || !panel_valid(&p.panel))
         return 2;
 #if FELUCCA_ARRANGER
     if (!arr_valid(&p.arrangement, 15u))
@@ -1064,6 +1064,7 @@ UI_SMALL static uint32_t settings_restore(const void *raw, uint32_t n)
     settings.palette = p.palette;
     settings.lowcut = p.lowcut;
     settings.zoom = p.zoom;
+    bright_apply();                                  /* (Bump It 1.1) BRIGHTNESS from the restored settings */
     panel = p.panel;
 #if FELUCCA_ARRANGER
     arrangement = p.arrangement;

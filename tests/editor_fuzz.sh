@@ -30,3 +30,7 @@ ${CC:-cc} -O1 -g -w -fsanitize=address,undefined -fno-sanitize=shift-base,signed
     -I"$OUT/gen" -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/boot_sound_test" tests/boot_sound_test.c -lm
 "$OUT/boot_sound_test" > "$OUT/boot_sound.log" || { cat "$OUT/boot_sound.log"; exit 1; }
 tail -n 1 "$OUT/boot_sound.log"
+# (Bump It 1.1) SETTINGS > BRIGHTNESS: saved, read back at power-on, taken by the web editor's restore, others refused
+${CC:-cc} -O1 -g -w -fsanitize=address,undefined -fno-sanitize=shift-base,signed-integer-overflow -fno-sanitize-recover=all \
+    -I"$OUT/gen" -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/bright_persist_test" tests/bright_persist_test.c -lm
+"$OUT/bright_persist_test"

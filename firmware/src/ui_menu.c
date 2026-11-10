@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* SLOOP menu (HOME held), in sections as the pages are (2.4): SCREEN (COLOR, ZOOM, KNOB ACCEL (2.7)), LIGHTS (LIGHTS, KEYS, NOTES),
+/* SLOOP menu (HOME held; Bump It 1.1 heads it SETTINGS), in sections as the pages are (2.4): SCREEN (COLOR, ZOOM, KNOB ACCEL (2.7),
+ * BRIGHTNESS (Bump It 1.1, bright.h)), LIGHTS (LIGHTS, KEYS, NOTES),
  * AUDIO (LOWCUT, USB AUDIO, USB SERIAL (FELUCCA_CDC builds only), USB RATE (2.7 beta)), SEQ (2.7.1: STEP ADVANCE, DRUM PREVIEW), SYSTEM (2ND CORE (dualcore), HARDWARE CALIBRATION, LEARN CLEAR (2.6), ABOUT).
  * SELECT goes to the section before / after (stopping at the ends), KNOB 1..4 set the section's settings in order (the knob's colour marks
  * its row), PRESETS moves the cursor; OCT+ steps the cursor's setting round or opens it (CALIBRATION, ABOUT),
@@ -8,12 +9,12 @@
 /* ------------------------------------------------------------ menu --- */
 #include "bumpit_version.h"   /* (Bump It 1.1) ABOUT shows Bump It's version beside SLOOP's */
 /* (2.7: USB SERIAL only in a build with the serial console, FELUCCA_CDC=1: the FM-1's build has none) */
-enum { MI_COLOR, MI_ZOOM, MI_ACCEL, MI_LIGHTS, MI_KEYS, MI_NOTES, MI_LOWCUT, MI_USB,
+enum { MI_COLOR, MI_ZOOM, MI_ACCEL, MI_BRIGHT, MI_LIGHTS, MI_KEYS, MI_NOTES, MI_LOWCUT, MI_USB,
 #if FELUCCA_CDC
        MI_SERIAL,
 #endif
        MI_RATE, MI_FRESO, MI_ADV, MI_DPREV, MI_CPU1, MI_PANEL, MI_LCLEAR, MI_ABOUT, MI_COUNT };
-static const char *const MI_NAME[MI_COUNT] = {"COLOR", "ZOOM", "KNOB ACCEL", "LIGHTS", "KEYS", "NOTES", "SPEAKER LOWCUT", "USB AUDIO",
+static const char *const MI_NAME[MI_COUNT] = {"COLOR", "ZOOM", "KNOB ACCEL", "BRIGHTNESS", "LIGHTS", "KEYS", "NOTES", "SPEAKER LOWCUT", "USB AUDIO",
 #if FELUCCA_CDC
                                               "USB SERIAL",
 #endif
@@ -59,7 +60,8 @@ UI_SMALL static const char *mi_value(uint32_t i, uint16_t *c)
             return k ? b : "MY THEME";
         }
         return PALETTES[settings.palette % NPALETTES].name;
-    case MI_ZOOM: return settings.zoom ? "ON" : "OFF";
+    case MI_ZOOM: return zoom_on() ? "ON" : "OFF";
+    case MI_BRIGHT: return BRIGHT_NAME[bright_step()];   /* (Bump It 1.1) bright.h */
     case MI_ACCEL: return knob_accel_off ? "OFF" : "ON";   /* (2.7) the knobs speed up with a fast turn */
     case MI_ADV: return step_adv_off ? "OFF" : "ON";      /* (2.7.1) the STEP page's cursor moves on when the keys are let go */
     case MI_DPREV: return drum_preview ? "ON" : "OFF";     /* (2.7.1) a drum sound picked with a knob is heard */
@@ -119,7 +121,7 @@ UI_SMALL static void draw_menu(void)
     if (ui.force)                                   /* head + rule + two bands cover rows 0..229 */
         lcd_fill(0, H_HEAD + 1 + 124 + 95, 240, 240 - (H_HEAD + 1 + 124 + 95), C_BLACK);
     cv_begin(240, H_HEAD, C_BLACK);
-    cv_text(4, 1, &FONT_S, ui.menu == 2 ? "ABOUT" : "MENU", C_HI);
+    cv_text(4, 1, &FONT_S, ui.menu == 2 ? "ABOUT" : "SETTINGS", C_HI);   /* (Bump It 1.1: was MENU) */
     if (ui.menu != 2) {                             /* the section and its number, as a page's "ENV DEST 2/2" */
         char t[16];
         str_cpy(t, MS_NAME[sec], sizeof t);
@@ -193,6 +195,12 @@ UI_SMALL static void draw_menu(void)
                     for (q = 0; q < 5u; q++)
                         cv_rect(xv + 10 + (int32_t)q * 14, y + 28, 10, 10, pal[q]);
                 }
+                if (i == MI_BRIGHT) {                   /* (Bump It 1.1) the level as five blocks, lit up to it */
+                    uint32_t q, lit = BRIGHT_N - bright_step();
+                    for (q = 0; q < BRIGHT_N; q++)
+                        cv_rect(xv + 10 + (int32_t)q * 14, y + 28 - (int32_t)q * 2, 10, 10 + (int32_t)q * 2,
+                                q < lit ? TE_COL[r & 3u] : C_LINE);
+                }
                 if (i == MI_RATE && usb_rate != usb_rate_now())
                     cv_text(xv + 8, y + 30, &FONT_S, "RESTART", C_AMB);   /* (usb.c: at the next start) */
 #if FELUCCA_CDC
@@ -256,13 +264,27 @@ UI_SMALL static void mi_set(uint32_t i, int32_t s)
     case MI_DPREV:                                     /* (2.7.1) right ON, left OFF; OCT+ toggles (ui_studio.c drum_hear) */
         drum_preview = (uint8_t)(s > 0 ? 1u : s < 0 ? 0u : !drum_preview);
         break;
-    case MI_ZOOM:
-    case MI_LOWCUT: {                                  /* right ON, left OFF; OCT+ toggles */
-        uint32_t *v = i == MI_LOWCUT ? &settings.lowcut : &settings.zoom;
-        *v = s > 0 ? 1u : s < 0 ? 0u : !*v;
-        fx_lowcut = (uint8_t)(settings.lowcut != 0);
+    case MI_ZOOM:                                      /* right ON, left OFF; OCT+ toggles (bit 0: BRIGHTNESS shares the word) */
+        settings.zoom = (settings.zoom & ~ZOOM_BIT) | (s > 0 ? ZOOM_BIT : s < 0 ? 0u : (zoom_on() ^ ZOOM_BIT));
+        break;
+    case MI_BRIGHT: {                                  /* (Bump It 1.1) right brighter, left dimmer (stops at the ends);
+                                                        * OCT+ a step dimmer, round to 100%. At once, the whole screen */
+        uint32_t st = bright_step();
+        if (s > 0 && st > 0u)
+            st--;
+        else if (s < 0 && st + 1u < BRIGHT_N)
+            st++;
+        else if (!s)
+            st = (st + 1u) % BRIGHT_N;
+        settings.zoom = (settings.zoom & ~BRIGHT_MASK) | st << BRIGHT_SHIFT;
+        bright_apply();
+        ui.force = 1;
         break;
     }
+    case MI_LOWCUT:                                    /* right ON, left OFF; OCT+ toggles */
+        settings.lowcut = s > 0 ? 1u : s < 0 ? 0u : !settings.lowcut;
+        fx_lowcut = (uint8_t)(settings.lowcut != 0);
+        break;
     case MI_USB:                                       /* right FULL, left MASTER */
         usb_full = (uint8_t)(s > 0 ? 1u : s < 0 ? 0u : !usb_full);
         break;

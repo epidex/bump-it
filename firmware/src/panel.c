@@ -139,6 +139,15 @@ UI_SMALL static void lights_from_word(uint32_t w)
     rec_quant_off = (uint8_t)((w >> 31) & 1u);  /* REC screen QUANT (2.7): an older word reads ON */        /* menu COLOR on your theme (2.7, gfx.c): shown once it is there */
 }
 
+#include "bright.h"                          /* (Bump It 1.1) BRIGHTNESS: in the ZOOM word, bits 8..10 */
+static uint32_t zoom_on(void) { return settings.zoom & ZOOM_BIT; }   /* menu ZOOM (bit 0 of its word) */
+static uint32_t bright_step(void)              /* menu BRIGHTNESS: 0 = 100% .. BRIGHT_N - 1 */
+{
+    uint32_t s = (settings.zoom & BRIGHT_MASK) >> BRIGHT_SHIFT;
+    return s < BRIGHT_N ? s : 0u;
+}
+static void bright_apply(void) { lcd_bright_set(bright_step()); }   /* the screen at the saved level */
+
 static void settings_save(void);              /* project.c: flash copy (FELUCCA_FLASH) */
 static uint8_t settings_later;                 /* changed while playing: saved once stopped (project.c) */
 
@@ -148,8 +157,11 @@ UI_SMALL static void settings_init(void)
         settings.magic = SETTINGS_MAGIC;
         settings.palette = PAL_PURPLE;         /* PURPLE on black (custom default; SLOOP's was MONO) */
         settings.lowcut = 0;
-        settings.zoom = 0;                     /* large readout of the touched value: off */
+        settings.zoom = 0;                     /* large readout of the touched value: off; BRIGHTNESS 100% */
     }
+    if (!ZOOM_WORD_OK(settings.zoom))          /* (Bump It 1.1) a word no Bump It wrote: ZOOM as it was, 100% */
+        settings.zoom = settings.zoom ? ZOOM_BIT : 0u;
+    bright_apply();
     palette_set(settings.palette);
     fx_lowcut = (uint8_t)(settings.lowcut != 0);
 }
