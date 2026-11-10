@@ -1,3 +1,42 @@
+# Bump It
+
+**Custom firmware for the M-VAVE FM-1**: all of [SLOOP](https://github.com/isod89/sloop-fm1) 2.8.5 (GPL-3.0-only) with a purple theme, an oscilloscope whose colours follow the sound's frequency, a purple BUMP IT boot screen, and a SETTINGS menu with screen brightness. No Bluetooth.
+
+> **Status: simulator only.** Bump It builds and passes its tests in a simulator. It has never run on a real FM-1. Install at your own risk.
+
+**Before you flash anything, back up.** Open SLOOP's [web editor](https://isod89.github.io/sloop-fm1/webapp/editor/) in Chrome or Edge, go to Projects, choose Backup, and check that the file is really on your PC. On the official firmware, use M-VAVE's [FM-1 Workbench](https://open.m-vave.com/fm1-workbench) instead: Bump It, like SLOOP, can't open the official firmware's projects.
+
+## Install (Windows, Chrome or Edge)
+
+1. Download `Bump-It-1.1-installer.html` from the [latest release](https://github.com/epidex/bump-it/releases/latest) and double-click it.
+2. Connect the FM-1 with a data USB cable, not through a hub, and close any other app or tab that uses MIDI.
+3. Wait for the page to say "Bump It 1.1", press **INSTALL**, allow MIDI access, and wait for "Done".
+
+The full steps, how to use brightness and what to do if something goes wrong are in [docs/BUMP-IT-INSTALL.md](docs/BUMP-IT-INSTALL.md).
+
+## Versions and rolling back
+
+Each version has a tag and a release with its installer on the [Releases](https://github.com/epidex/bump-it/releases) page:
+
+- **v1.0:** SLOOP with the purple theme, the frequency-coloured scope and the BUMP IT boot screen
+- **v1.1-original:** the first 1.1 build, before the polish
+- **v1.1:** the polished 1.1, with SETTINGS > SCREEN > BRIGHTNESS and a shorter boot screen
+
+To go back, set brightness to 100% first, then install an older release's installer the same way. SLOOP itself is on [its releases page](https://github.com/isod89/sloop-fm1/releases). To return to the official firmware, use M-VAVE's M-UPGRADE.
+
+## Get the code
+
+```
+git clone https://github.com/epidex/bump-it.git
+cd bump-it && git pull     # later, to get updates
+```
+
+The history includes SLOOP's own commits, so you can compare Bump It with the SLOOP version it's built on.
+
+---
+
+*Below is SLOOP's own README, kept as it is.*
+
 <p align="center"><img src="assets/logo/sloop-logo.png" alt="SLOOP" width="420"></p>
 
 <p align="center"><b>A live groovebox firmware for the M-VAVE FM-1 — for any style.</b><br>
